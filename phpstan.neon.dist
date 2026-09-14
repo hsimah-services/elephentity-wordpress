@@ -1,0 +1,11 @@
+parameters:
+    level: max
+    phpVersion: 80300
+    paths:
+        - src
+        - tests
+    tmpDir: .phpstan.cache
+    # WordPress ships no autoloadable class map, so its symbols come from stubs.
+    scanFiles:
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+    treatPhpDocTypesAsCertain: false
