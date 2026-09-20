@@ -24,6 +24,7 @@ use Eleph\Runtime\Storage\Write\WriteResult;
 use Eleph\WordPress\Account\AccountFields;
 use Eleph\WordPress\Account\AccountStorage;
 use Eleph\WordPress\Database\Database;
+use Eleph\WordPress\Post\PostStorage;
 use Eleph\WordPress\Sql\EdgePlacement;
 use Eleph\WordPress\Sql\FieldMap;
 use Eleph\WordPress\Sql\QueryCompiler;
@@ -53,6 +54,7 @@ final readonly class WordPressAdaptor implements StorageAdaptor
      * @param array<string, EdgePlacement>     $placements        Keyed by "Entity.edge".
      * @param array<string, string>            $taxonomies        Entity name => taxonomy slug.
      * @param array<string, TaxonomyPlacement> $taxonomyPlacements Keyed by "Entity.edge".
+     * @param array<string, string> $posts Entity => linked post type.
      * @param array<string, AccountFields>      $accounts Keyed by entity name.
      */
     public function __construct(
@@ -66,6 +68,8 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         private TaxonomyStorage $taxonomy = new TaxonomyStorage(),
         private array $accounts = [],
         private AccountStorage $account = new AccountStorage(),
+        private array $posts = [],
+        private PostStorage $post = new PostStorage(),
     ) {
     }
 
@@ -366,10 +370,7 @@ final readonly class WordPressAdaptor implements StorageAdaptor
             match (true) {
                 $operation instanceof Insert => $result->assign(
                     $operation->pendingId(),
-                    EntityId::of($this->database->insert(
-                        $table->name,
-                        $this->fields->toColumns($operation->entity(), $operation->values),
-                    )),
+                    $this->insert($table, $operation),
                 ),
                 $operation instanceof Update => $this->update($table, $operation),
                 $operation instanceof Delete => $this->delete($table, $operation),
@@ -521,6 +522,32 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         return $identifier instanceof EntityId ? $identifier->raw() : (string) $identifier;
     }
 
+    private function insert(TableSchema $table, Insert $operation): EntityId
+    {
+        $values = $this->fields->toColumns($operation->entity(), $operation->values);
+        $postType = $this->posts[$operation->entity()] ?? null;
+        $postId = null;
+
+        if (null !== $postType) {
+            if (array_key_exists('wp_post_id', $values)) {
+                throw new RuntimeException('wp_post_id is managed by the WordPress integration.');
+            }
+
+            $postId = $this->post->create($postType, $operation->entity(), $operation->values);
+            $values['wp_post_id'] = $postId;
+        }
+
+        try {
+            return EntityId::of($this->database->insert($table->name, $values));
+        } catch (Throwable $exception) {
+            if (null !== $postId) {
+                $this->post->delete($postId);
+            }
+
+            throw $exception;
+        }
+    }
+
     private function update(TableSchema $table, Update $operation): void
     {
         if ([] === $operation->values) {
@@ -531,6 +558,10 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         $bindings = [];
 
         foreach ($operation->values as $field => $value) {
+            if (isset($this->posts[$operation->entity()]) && 'wp_post_id' === $this->fields->column($operation->entity(), $field)) {
+                throw new RuntimeException('wp_post_id is managed by the WordPress integration.');
+            }
+
             $assignments[] = sprintf('`%s` = %%s', $this->fields->column($operation->entity(), $field));
             $bindings[] = $value;
         }
@@ -570,6 +601,10 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         }
 
         unset($row['id']);
+
+        if (isset($this->posts[$entity])) {
+            unset($row['wp_post_id']);
+        }
 
         // Columns become fields here, so nothing above the adaptor ever sees a
         // snake_case name or has to know how this backend spells things.

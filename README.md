@@ -56,3 +56,33 @@ import — see `Runtime.php` there. It only fails in a real project, at boot, af
 generating. Regenerating `clog` in
 [`elephentity-examples`](https://github.com/hsimah-services/elephentity-examples) is
 what catches it.
+
+## Generated admin pages and optional posts
+
+The WordPress builder's `integrations.wordpress` settings default to
+`adminTemplates: true` and `linkPosts: false`. Hook generated pages on `admin_menu`:
+
+```php
+use Eleph\WordPress\Admin\Pages;
+
+add_action('admin_menu', static function () use ($runtime): void {
+    Pages::fromManifest(__DIR__ . '/generated/wordpress/admin-pages.php', $runtime)->register();
+});
+```
+
+The views require `manage_options` and load records through the runtime's read
+policies. Applications supplying a parent menu slug must register that parent menu.
+With templates enabled, the builder hides native post screens for linked entities.
+
+Enabling `linkPosts` on an entity with `storage.handle` adds an integration-owned
+`wp_post_id` column. `WordPress::adaptor()` consumes the manifest's `posts` mapping
+and creates a draft post alongside each new entity. The entity keeps its own ID;
+foreign keys and join tables continue to use Elephentity IDs. WordPress insertion
+errors prevent entity insertion. Entity insertion errors clean up the new post.
+The runtime's transaction must use the same WordPress database connection; WordPress
+hooks can have external effects that a database rollback cannot undo.
+
+`OrphanGuard::onPostDeleted()` clears `wp_post_id` instead of deleting entity rows.
+This keeps external post deletion from bypassing Elephentity relationship rules.
+Deleting an entity does not delete its linked post; post publication, updates,
+backfilling existing records, and post retention remain application decisions.

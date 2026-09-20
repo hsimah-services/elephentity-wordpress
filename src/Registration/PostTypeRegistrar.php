@@ -7,24 +7,7 @@ namespace Eleph\WordPress\Registration;
 use RuntimeException;
 
 /**
- * Registers the post types the spec compiled to.
- *
- * As thin as the GraphQL registrar, and for the same reason: every decision was made
- * when the manifest was compiled, so all that is left is the loop that calls WordPress.
- * It used to take the compiled `Schema` and derive the arguments per request, which
- * meant a plugin registering post types shipped the spec compiler and parsed YAML on
- * every request. The derivation now lives in `elephentity-codegen-wordpress`'s
- * `PostTypeManifestBuilder`, at build time, in a separate repository (elephentity#62).
- *
- * Registering the type is all this does. **Nothing here creates or maintains a post
- * row** — the custom table is the entity, and a `postId` field is a column like any
- * other, filled by whatever the application decides fills it (a `postCommit` trigger
- * calling `wp_insert_post()` is the obvious shape).
- *
- * Said plainly because the opposite was once written here: where both records exist
- * they can diverge, the custom table is authoritative, and keeping the projection in
- * step is the application's job. Delete events are dispatched for cascades too, so
- * that job is at least possible to do.
+ * Registers compiled post types. The storage adaptor creates linked posts.
  */
 final readonly class PostTypeRegistrar
 {

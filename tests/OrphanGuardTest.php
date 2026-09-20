@@ -25,22 +25,20 @@ final class OrphanGuardTest extends TestCase
     {
         $guard = new OrphanGuard($this->manifest(), new FakeDatabase());
 
-        // Only Post carries the WordPressPost pattern's postId.
+        // Only Post opts into a linked WordPress post.
         self::assertSame(['wp_phe_post'], $guard->tablesTrackingPosts());
     }
 
-    public function testDeletingAPostCleansUpTheRowPointingAtIt(): void
+    public function testDeletingAPostDetachesTheLinkWithoutDeletingTheEntity(): void
     {
-        // Nothing in the framework sees someone empty the trash in wp-admin, so
-        // without this the post row goes and the custom row survives, pointing at
-        // nothing.
+        // Deleting a projection must preserve entity IDs and relationships.
         $database = new FakeDatabase();
 
         (new OrphanGuard($this->manifest(), $database))->onPostDeleted(99);
 
         self::assertCount(1, $database->statements);
         self::assertSame(
-            'DELETE FROM `wp_phe_post` WHERE `post_id` = %d',
+            'UPDATE `wp_phe_post` SET `wp_post_id` = NULL WHERE `wp_post_id` = %d',
             $database->statements[0]['sql'],
         );
         self::assertSame([99], $database->statements[0]['bindings']);
@@ -65,6 +63,6 @@ final class OrphanGuardTest extends TestCase
             throw new RuntimeException('fixtures/storage-manifest.php did not return a StorageManifest.');
         }
 
-        return self::$manifest = $manifest->withPrefix('wp_');
+        return self::$manifest = (new StorageManifest($manifest->tables, posts: ['Post' => 'phe_post']))->withPrefix('wp_');
     }
 }
