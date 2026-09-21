@@ -73,6 +73,9 @@ add_action('admin_menu', static function () use ($runtime): void {
 The views require `manage_options` and load records through the runtime's read
 policies. Applications supplying a parent menu slug must register that parent menu.
 With templates enabled, the builder hides native post screens for linked entities.
+List and detail views format timestamps using the site's date/time settings,
+timezone, and locale. Whole HTTP(S) URL values become clickable links; other text
+remains escaped, and record IDs in lists still link to their entity detail page.
 
 Enabling `linkPosts` on an entity with `storage.handle` adds an integration-owned
 `wp_post_id` column. `WordPress::adaptor()` consumes the manifest's `posts` mapping

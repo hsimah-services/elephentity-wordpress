@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 namespace Eleph\WordPress\Admin {
+    use DateTimeImmutable;
+    use DateTimeZone;
     use RuntimeException;
 
     function current_user_can(string $capability): bool
@@ -31,6 +33,18 @@ namespace Eleph\WordPress\Admin {
         return '/wp-admin/' . $path;
     }
 
+    function get_option(string $name, mixed $default = false): mixed
+    {
+        return \Eleph\WordPress\Tests\AdminPagesTest::$options[$name] ?? $default;
+    }
+
+    function wp_date(string $format, int $timestamp): string
+    {
+        return (new DateTimeImmutable('@' . $timestamp))
+            ->setTimezone(new DateTimeZone('America/Los_Angeles'))
+            ->format($format);
+    }
+
     function add_menu_page(string $title, string $label, string $capability, string $slug, callable $callback, string $icon): void
     {
         \Eleph\WordPress\Tests\AdminPagesTest::$menus[] = $slug;
@@ -38,6 +52,7 @@ namespace Eleph\WordPress\Admin {
 }
 
 namespace Eleph\WordPress\Tests {
+    use DateTimeImmutable;
     use Eleph\Runtime\Gateway\EntityGateway;
     use Eleph\Runtime\Identity\EntityId;
     use Eleph\Runtime\Policy\AccessDenied;
@@ -59,12 +74,16 @@ namespace Eleph\WordPress\Tests {
         /** @var list<string> */
         public static array $menus = [];
 
+        /** @var array<string, string> */
+        public static array $options = [];
+
         private string $template;
 
         protected function setUp(): void
         {
             self::$allowed = true;
             self::$menus = [];
+            self::$options = [];
             $_GET = [];
             $file = tempnam(sys_get_temp_dir(), 'eleph-admin-');
             self::assertNotFalse($file);
@@ -135,6 +154,88 @@ namespace Eleph\WordPress\Tests {
             $this->expectException(RuntimeException::class);
             $this->expectExceptionCode(404);
             $this->pages($gateway)->render('Item');
+        }
+
+        public function testTimestampsUseSiteFormatsAndTimezoneInBothViews(): void
+        {
+            $record = new class () {
+                public function getCreatedAt(): DateTimeImmutable
+                {
+                    return new DateTimeImmutable('2026-09-21T06:30:00Z');
+                }
+            };
+
+            foreach (['listing', 'detail'] as $method) {
+                self::$options = ['date_format' => 'F j, Y', 'time_format' => 'g:i a'];
+                $html = $this->renderView($method, $record, ['createdAt' => 'Created at']);
+                self::assertStringContainsString('September 20, 2026 11:30 pm', $html);
+                self::assertStringNotContainsString('2026-09-21T06:30:00', $html);
+
+                self::$options = ['date_format' => 'd/m/Y', 'time_format' => 'H:i'];
+                self::assertStringContainsString('20/09/2026 23:30', $this->renderView($method, $record, ['createdAt' => 'Created at']));
+            }
+        }
+
+        public function testWebUrlsAreLinkedAndUnsafeValuesRemainTextInBothViews(): void
+        {
+            $record = new class () {
+                public function getWebsite(): string
+                {
+                    return 'https://example.com/watch?a=1&b=2';
+                }
+
+                public function getLegacyWebsite(): string
+                {
+                    return 'http://example.com/';
+                }
+
+                public function getUnsafe(): string
+                {
+                    return 'javascript:alert(1)';
+                }
+
+                public function getMarkup(): string
+                {
+                    return '<a href="https://example.com/">Untrusted</a>';
+                }
+
+                public function getDescription(): string
+                {
+                    return 'See https://example.com/ for details';
+                }
+            };
+            $fields = ['website' => 'Website', 'legacyWebsite' => 'Legacy', 'unsafe' => 'Unsafe', 'markup' => 'Markup', 'description' => 'Description'];
+
+            foreach (['listing', 'detail'] as $method) {
+                $html = $this->renderView($method, $record, $fields);
+                self::assertStringContainsString('<a href="https://example.com/watch?a=1&amp;b=2">https://example.com/watch?a=1&amp;b=2</a>', $html);
+                self::assertStringContainsString('<a href="http://example.com/">http://example.com/</a>', $html);
+                self::assertStringContainsString('javascript:alert(1)', $html);
+                self::assertStringNotContainsString('href="javascript:', $html);
+                self::assertStringContainsString('&lt;a href=', $html);
+                self::assertStringNotContainsString('>Untrusted</a>', $html);
+                self::assertStringContainsString('See https://example.com/ for details', $html);
+            }
+        }
+
+        /** @param array<string, string> $fields */
+        private function renderView(string $method, object $record, array $fields): string
+        {
+            ob_start();
+
+            try {
+                $view = new View('eleph-item');
+
+                if ('listing' === $method) {
+                    $view->listing('Items', $fields, ['records' => [$record]]);
+                } else {
+                    $view->detail('Item', $fields, ['record' => $record]);
+                }
+
+                return (string) ob_get_contents();
+            } finally {
+                ob_end_clean();
+            }
         }
 
         private function pages(EntityGateway $gateway, ?string $detail = null): Pages

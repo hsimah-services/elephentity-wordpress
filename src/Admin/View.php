@@ -45,7 +45,7 @@ final readonly class View
                     if ('id' === $field) {
                         echo '<a href="' . esc_url($this->url(['record' => $value])) . '">' . esc_html($value) . '</a>';
                     } else {
-                        echo esc_html($value);
+                        echo $this->formatted($value);
                     }
 
                     echo '</td>';
@@ -75,7 +75,7 @@ final readonly class View
 
         if (is_object($record)) {
             foreach ($fields as $field => $label) {
-                echo '<tr><th>' . esc_html($label) . '</th><td>' . esc_html($this->value($record, $field)) . '</td></tr>';
+                echo '<tr><th>' . esc_html($label) . '</th><td>' . $this->formatted($this->value($record, $field)) . '</td></tr>';
             }
         }
 
@@ -92,10 +92,35 @@ final readonly class View
             null === $value => '',
             is_bool($value) => $value ? 'Yes' : 'No',
             $value instanceof BackedEnum => (string) $value->value,
-            $value instanceof DateTimeInterface => $value->format(DATE_ATOM),
+            $value instanceof DateTimeInterface => $this->date($value),
             is_scalar($value), $value instanceof Stringable => (string) $value,
             default => (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         };
+    }
+
+    private function date(DateTimeInterface $value): string
+    {
+        $date = get_option('date_format', 'F j, Y');
+        $time = get_option('time_format', 'g:i a');
+        $format = (is_string($date) ? $date : 'F j, Y') . ' ' . (is_string($time) ? $time : 'g:i a');
+
+        // wp_date localizes the instant using the site's timezone and locale.
+        return wp_date($format, $value->getTimestamp()) ?: $value->format(DATE_ATOM);
+    }
+
+    /** Render whole HTTP(S) URL values as links; all other values remain escaped text. */
+    private function formatted(string $value): string
+    {
+        $text = esc_html($value);
+
+        if (false === filter_var($value, FILTER_VALIDATE_URL)
+            || !in_array(strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+            return $text;
+        }
+
+        $url = esc_url($value);
+
+        return '' === $url ? $text : '<a href="' . $url . '">' . $text . '</a>';
     }
 
     /** @param array<string, string> $parameters */
