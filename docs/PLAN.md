@@ -63,7 +63,7 @@ such code ever existed, which is worse than the gap itself: an entity declaring 
 
 The projection stays the application's, for a reason that outlives the missing code. A
 post row is a WordPress-shaped side effect of a commit, and side effects on commit are
-already a thing the framework has: a `postCommit` trigger. Building a second,
+already a thing the framework has: a `postCommit` sideEffect. Building a second,
 adaptor-level mechanism for the one platform that needs it would put a WordPress
 concept inside the unit of work, which is exactly what the storage port exists to
 prevent.
@@ -76,7 +76,7 @@ Two consequences, both deliberate:
 - **Delete events fire for cascades.** An application maintaining a projection has to
   see every row that goes, not only the one it asked to delete, so the unit of work
   announces every planned removal — and announces it *before* the DELETE, since a
-  trigger that cannot read the row it is being told about cannot project it.
+  sideEffect that cannot read the row it is being told about cannot project it.
 
 ### Taxonomy-backed entities
 
@@ -105,7 +105,7 @@ a table for the taxonomy entity itself, for the same reason.
 alternative — using the real `wp_posts.ID` so WordPress's own `tax_query` and admin
 term lists see the relationship — was rejected because nothing in this framework
 reliably has that id at write time: `postId`, per "Post-row divergence" above, is
-filled by an application's own `postCommit` trigger, asynchronously, and possibly never.
+filled by an application's own `postCommit` sideEffect, asynchronously, and possibly never.
 Keying by the framework's own id keeps this correct and fully framework-owned, at the
 cost of WordPress-native `tax_query`/admin-list integration needing the application to
 keep the two in sync itself — the identical tradeoff `postId` already makes.
@@ -189,7 +189,7 @@ two managed timestamps is `wp_usermeta`, full stop. Also deferred: an account en
 declaring edges of its own (only other entities *pointing at* one is supported,
 mirroring a taxonomy's own edge-shape restriction), and a real project's way to seed
 the first `wp_usermeta` row for a newly registered account, which is presumably a
-`postCommit`-trigger-shaped concern on whatever entity WordPress's own registration
+`postCommit`-sideEffect-shaped concern on whatever entity WordPress's own registration
 hook fires against — the same shape the post-row-divergence problem already has.
 
 ### The memory adapter, and the conformance suite that proves it

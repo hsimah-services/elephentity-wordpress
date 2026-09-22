@@ -142,14 +142,14 @@ final class WordPressAdaptorTest extends TestCase
 
         try {
             $this->adaptor($database)->transaction(static function (): mixed {
-                throw new RuntimeException('a preCommit trigger said no');
+                throw new RuntimeException('a storage operation failed');
             });
         } catch (RuntimeException $exception) {
             $thrown = $exception;
         }
 
-        // A preCommit trigger throwing must take the whole commit with it.
-        self::assertSame('a preCommit trigger said no', $thrown->getMessage());
+        // A storage exception must roll back the whole transaction.
+        self::assertSame('a storage operation failed', $thrown->getMessage());
         self::assertSame(['begin', 'rollback'], $database->transactionLog);
     }
 
