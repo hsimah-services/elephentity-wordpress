@@ -50,7 +50,7 @@ final readonly class QueryCompiler
             . $this->orderBy($table, $criteria)
             . $this->limit($criteria);
 
-        return new CompiledQuery($sql, [...$links['bindings'], ...$bindings]);
+        return new CompiledQuery($sql, [...$bindings, ...$links['bindings']]);
     }
 
     public function count(TableSchema $table, Criteria $criteria): CompiledQuery
@@ -62,7 +62,7 @@ final readonly class QueryCompiler
             sprintf('SELECT COUNT(*) FROM `%s`', $table->name)
                 . $links['join']
                 . $this->combine($where, $links['where']),
-            [...$links['bindings'], ...$bindings],
+            [...$bindings, ...$links['bindings']],
         );
     }
 
@@ -78,6 +78,7 @@ final readonly class QueryCompiler
     /**
      * Compile every "linked to" constraint into joins, a where clause, and — when more
      * than one parent is named — the projection that says which parent a row came from.
+     * Joins and projections contain only identifiers; all bindings belong to WHERE.
      *
      * @return array{join: string, where: string, projection: string, bindings: list<scalar|null>}
      */
