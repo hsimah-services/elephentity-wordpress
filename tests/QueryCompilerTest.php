@@ -19,6 +19,7 @@ use Eleph\WordPress\Sql\QueryCompiler;
 use Eleph\WordPress\Sql\TableSchema;
 use Eleph\WordPress\Taxonomy\TaxonomyPlacement;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -280,6 +281,77 @@ final class QueryCompilerTest extends TestCase
 
         self::assertStringContainsString('`tt1`.`term_id` AS `__parent`', $compiled->sql);
         self::assertSame(['aka', '1', '2'], $compiled->bindings);
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function mixedFilterCases(): iterable
+    {
+        foreach (['local', 'join', 'taxonomy', 'multiple'] as $edge) {
+            yield $edge . ' with fields' => [$edge, true];
+            yield $edge . ' only' => [$edge, false];
+        }
+
+        yield 'fields only' => ['none', true];
+    }
+
+    #[DataProvider('mixedFilterCases')]
+    public function testSelectAndCountBindValuesInSqlOrder(string $edge, bool $withFields): void
+    {
+        $table = 'local' === $edge ? $this->commentTable() : $this->table();
+        $criteria = Criteria::for('local' === $edge ? 'Comment' : 'Post');
+        $clauses = [];
+        $bindings = [];
+        $joins = '';
+
+        if ($withFields) {
+            $criteria = $criteria->where(Filter::greaterThan('id', 17))->where(Filter::in('id', [23, 29]));
+            $clauses[] = sprintf('`%s`.`id` > %%s', $table->name);
+            $clauses[] = sprintf('`%s`.`id` IN (%%s, %%s)', $table->name);
+            $bindings = [17, 23, 29];
+        }
+
+        if ('local' === $edge) {
+            $criteria = $criteria->linkedTo(EdgeFilter::back('Comment', 'post', EntityId::of(42)));
+            $clauses[] = '`wp_phe_comment`.`post_id` IN (%d)';
+            $bindings[] = '42';
+        }
+
+        if ('join' === $edge || 'multiple' === $edge) {
+            $criteria = $criteria->linkedTo(EdgeFilter::back('Post', 'tags', EntityId::of(53)));
+            $joins .= ' INNER JOIN `wp_phe_post_tags` `l1` ON `l1`.`post_id` = `wp_phe_post`.`id`';
+            $clauses[] = '`l1`.`tag_id` IN (%d)';
+            $bindings[] = '53';
+        }
+
+        if ('taxonomy' === $edge || 'multiple' === $edge) {
+            $criteria = $criteria->linkedTo(EdgeFilter::back('Post', 'akas', EntityId::of(67)));
+            $alias = 'multiple' === $edge ? 2 : 1;
+            $joins .= sprintf(
+                ' INNER JOIN `wp_term_relationships` `tr%1$d` ON `tr%1$d`.`object_id` = `wp_phe_post`.`id`'
+                    . ' INNER JOIN `wp_term_taxonomy` `tt%1$d` ON `tt%1$d`.`term_taxonomy_id` = `tr%1$d`.`term_taxonomy_id`',
+                $alias,
+            );
+            $clauses[] = sprintf('`tt%1$d`.`taxonomy` = %%s AND `tt%1$d`.`term_id` IN (%%d)', $alias);
+            $bindings[] = 'aka';
+            $bindings[] = '67';
+        }
+
+        $compiler = new QueryCompiler(
+            placements: $this->placements(),
+            taxonomyPlacements: ['Post.akas' => new TaxonomyPlacement('Post', 'akas', 'Aka', 'aka')],
+            termRelationshipsTable: 'wp_term_relationships',
+            termTaxonomyTable: 'wp_term_taxonomy',
+        );
+        $suffix = sprintf(' FROM `%s`', $table->name) . $joins . ' WHERE ' . implode(' AND ', $clauses);
+        $select = $compiler->select($table, $criteria);
+        $count = $compiler->count($table, $criteria);
+
+        self::assertSame(sprintf('SELECT `%s`.*', $table->name) . $suffix, $select->sql);
+        self::assertSame('SELECT COUNT(*)' . $suffix, $count->sql);
+        self::assertSame($bindings, $select->bindings);
+        self::assertSame($bindings, $count->bindings);
     }
 
     private function compileTaxonomyFor(TableSchema $table, Criteria $criteria): CompiledQuery
