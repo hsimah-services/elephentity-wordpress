@@ -13,7 +13,7 @@ use Eleph\WordPress\Database\Database;
  * QueryCompiler, which are pure — so what is worth checking here is dispatch and the
  * transaction boundary, not SQL semantics.
  */
-final class FakeDatabase implements Database
+class FakeDatabase implements Database
 {
     /** @var list<array{sql: string, bindings: list<scalar|null>}> */
     public array $statements = [];

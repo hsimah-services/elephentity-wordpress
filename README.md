@@ -89,3 +89,5 @@ hooks can have external effects that a database rollback cannot undo.
 This keeps external post deletion from bypassing Elephentity relationship rules.
 Deleting an entity does not delete its linked post; post publication, updates,
 backfilling existing records, and post retention remain application decisions.
+
+Domain relationships to taxonomy-backed entities use ordinary foreign-key columns or edge-specific join tables. Native term APIs still own taxonomy entity CRUD; domain edges never use `wp_term_relationships`. Regenerate the WordPress manifest and rebuild alpha storage when upgrading from shared native relationships; no legacy-link migration is provided.
