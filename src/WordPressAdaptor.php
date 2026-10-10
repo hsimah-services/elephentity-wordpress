@@ -9,6 +9,7 @@ use Eleph\Runtime\Capability\Capability;
 use Eleph\Runtime\Identity\EntityId;
 use Eleph\Runtime\Identity\Identifier;
 use Eleph\Runtime\Storage\Criteria;
+use Eleph\Runtime\Storage\Direction;
 use Eleph\Runtime\Storage\EdgeFilter;
 use Eleph\Runtime\Storage\Offset;
 use Eleph\Runtime\Storage\Page;
@@ -218,9 +219,10 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         if ([] === $criteria->links) {
             return $this->taxonomy->query($entity, $taxonomy, $criteria);
         }
-        if ([] !== $criteria->filters || [] !== $criteria->order || 1 !== count($criteria->links)) {
-            throw new RuntimeException('A linked taxonomy query supports one edge and no field filters or ordering.');
+        if ([] !== $criteria->filters || [] !== array_filter($criteria->order, static fn ($order): bool => 'id' !== $order->field) || 1 !== count($criteria->links)) {
+            throw new RuntimeException('A linked taxonomy query supports one edge, no field filters and ordering by id.');
         }
+        $direction = Direction::Descending === ($criteria->order[0] ?? null)?->direction ? 'DESC' : 'ASC';
         $link = $criteria->links[0];
         $placement = $this->placement($link->entity, $link->edge);
         if ($link->reversed || $placement->target !== $entity || (!$placement->usesJoinTable() && !$placement->keyIsLocal())) {
@@ -234,14 +236,15 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         }
         $rows = $this->database->select(
             sprintf(
-                'SELECT `%s` AS `parent`, `%s` AS `target` FROM `%s` WHERE `%s` IN (%s) ORDER BY `%s`, `%s`',
+                'SELECT `%s` AS `parent`, `%s` AS `target` FROM `%s` WHERE `%s` IN (%s) ORDER BY `%s` %s, `%s`',
                 $parent,
                 $target,
                 $placement->table,
                 $parent,
                 implode(', ', array_fill(0, count($ids), '%d')),
-                $parent,
                 $target,
+                $direction,
+                $parent,
             ),
             $ids,
         );
@@ -347,7 +350,7 @@ final readonly class WordPressAdaptor implements StorageAdaptor
      */
     private function linkedAccountIds(string $entity, Criteria $criteria): ?array
     {
-        if ([] !== $criteria->filters || [] !== $criteria->order || 1 !== count($criteria->links)) {
+        if ([] !== $criteria->filters || [] !== array_filter($criteria->order, static fn ($order): bool => 'id' !== $order->field) || 1 !== count($criteria->links)) {
             return null;
         }
 
@@ -363,10 +366,12 @@ final readonly class WordPressAdaptor implements StorageAdaptor
 
         $rows = $this->database->select(
             sprintf(
-                'SELECT `id`, `%s` FROM `%s` WHERE `id` IN (%s)',
+                'SELECT `id`, `%s` FROM `%s` WHERE `id` IN (%s) ORDER BY `%s` %s, `id` ASC',
                 $placement->localColumn,
                 $placement->table,
                 $placeholders,
+                $placement->localColumn,
+                Direction::Descending === ($criteria->order[0] ?? null)?->direction ? 'DESC' : 'ASC',
             ),
             $parentIds,
         );

@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0cfa76e38dd942395c1a7feb6df08538",
+    "content-hash": "ee5a2597e93bd8f92e4553ddda5fbb68",
     "packages": [
         {
             "name": "elephentity/runtime",
-            "version": "v0.10.0",
+            "version": "v0.13.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/hsimah-services/elephentity-runtime.git",
-                "reference": "f3190c28d60e3e2e5f463f59e7d0992d1f700efd"
+                "reference": "a2c260d5e47efbab3933fd7a85b39dd07a6afeb1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/hsimah-services/elephentity-runtime/zipball/f3190c28d60e3e2e5f463f59e7d0992d1f700efd",
-                "reference": "f3190c28d60e3e2e5f463f59e7d0992d1f700efd",
+                "url": "https://api.github.com/repos/hsimah-services/elephentity-runtime/zipball/a2c260d5e47efbab3933fd7a85b39dd07a6afeb1",
+                "reference": "a2c260d5e47efbab3933fd7a85b39dd07a6afeb1",
                 "shasum": ""
             },
             "require": {
@@ -43,9 +43,9 @@
             "description": "Elephentity runtime contracts: storage port, unit of work, verification, loaders.",
             "support": {
                 "issues": "https://github.com/hsimah-services/elephentity-runtime/issues",
-                "source": "https://github.com/hsimah-services/elephentity-runtime/tree/v0.10.0"
+                "source": "https://github.com/hsimah-services/elephentity-runtime/tree/v0.13.1"
             },
-            "time": "2026-09-22T00:43:04+00:00"
+            "time": "2026-10-10T22:13:33+00:00"
         },
         {
             "name": "psr/container",

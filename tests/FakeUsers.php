@@ -59,10 +59,13 @@ final class FakeUsers implements Users
         $this->meta[$wpUserId][$key] = $value;
     }
 
-    public function list(?int $limit, int $offset): array
+    public function list(?int $limit, int $offset, bool $descending = false): array
     {
         $ids = array_keys($this->registered);
         sort($ids);
+        if ($descending) {
+            $ids = array_reverse($ids);
+        }
 
         return array_values(array_slice($ids, $offset, $limit));
     }

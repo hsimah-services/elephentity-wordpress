@@ -59,10 +59,13 @@ final class FakeTerms implements Terms
         return $names;
     }
 
-    public function list(string $taxonomy, ?int $limit, int $offset): array
+    public function list(string $taxonomy, ?int $limit, int $offset, bool $descending = false): array
     {
         $ids = array_keys($this->terms[$taxonomy] ?? []);
         sort($ids);
+        if ($descending) {
+            $ids = array_reverse($ids);
+        }
 
         $sliced = array_slice($ids, $offset, $limit);
 

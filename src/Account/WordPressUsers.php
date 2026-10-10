@@ -68,12 +68,12 @@ final readonly class WordPressUsers implements Users
         update_user_meta($wpUserId, $key, $value);
     }
 
-    public function list(?int $limit, int $offset): array
+    public function list(?int $limit, int $offset, bool $descending = false): array
     {
         $args = [
             'fields' => 'ID',
             'orderby' => 'ID',
-            'order' => 'ASC',
+            'order' => $descending ? 'DESC' : 'ASC',
             'offset' => $offset,
         ];
 

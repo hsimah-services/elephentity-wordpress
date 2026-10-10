@@ -7,6 +7,7 @@ namespace Eleph\WordPress\Account;
 use Eleph\Runtime\Identity\EntityId;
 use Eleph\Runtime\Identity\Identifier;
 use Eleph\Runtime\Storage\Criteria;
+use Eleph\Runtime\Storage\Direction;
 use Eleph\Runtime\Storage\Offset;
 use Eleph\Runtime\Storage\Page;
 use Eleph\Runtime\Storage\Record;
@@ -84,7 +85,7 @@ final readonly class AccountStorage
         $this->assertPlainListing($criteria);
 
         $offset = Offset::fromCursor($criteria->after)->value;
-        $ids = $this->users->list(null === $criteria->limit ? null : $criteria->limit + 1, $offset);
+        $ids = $this->users->list(null === $criteria->limit ? null : $criteria->limit + 1, $offset, Direction::Descending === ($criteria->order[0] ?? null)?->direction);
 
         $keys = $this->metaKeys($fields, $map);
         $keysByUser = [];
@@ -201,7 +202,7 @@ final readonly class AccountStorage
 
     private function assertPlainListing(Criteria $criteria): void
     {
-        if ([] !== $criteria->filters || [] !== $criteria->order || [] !== $criteria->links) {
+        if ([] !== $criteria->filters || [] !== array_filter($criteria->order, static fn ($order): bool => 'id' !== $order->field) || [] !== $criteria->links) {
             throw new RuntimeException(
                 'An account-backed entity supports listing and paging only; field '
                     . 'filters, ordering and "linked to" queries are not available.',

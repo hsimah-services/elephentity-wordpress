@@ -10,6 +10,7 @@ use Eleph\Runtime\Storage\Direction;
 use Eleph\Runtime\Storage\EdgeFilter;
 use Eleph\Runtime\Storage\Filter;
 use Eleph\Runtime\Storage\Offset;
+use Eleph\Runtime\Storage\Order;
 use Eleph\WordPress\Taxonomy\TaxonomyPlacement;
 use RuntimeException;
 
@@ -276,19 +277,27 @@ final readonly class QueryCompiler
 
     private function orderBy(TableSchema $table, Criteria $criteria): string
     {
-        if ([] === $criteria->order) {
-            return '';
+        $orders = $criteria->order;
+        $last = $orders[array_key_last($orders)] ?? null;
+        if ('id' !== $last?->field) {
+            $orders[] = Order::ascending('id');
         }
-
         $parts = [];
 
-        foreach ($criteria->order as $order) {
+        foreach ($orders as $order) {
             $parts[] = sprintf(
                 '`%s`.`%s` %s',
                 $table->name,
                 $this->resolve($table, $order->field),
                 Direction::Descending === $order->direction ? 'DESC' : 'ASC',
             );
+        }
+
+        foreach ($criteria->links as $link) {
+            if ($link->needsParentColumn()) {
+                $parts[] = '`' . EdgeFilter::PARENT_COLUMN . '` ASC';
+                break;
+            }
         }
 
         return ' ORDER BY ' . implode(', ', $parts);
