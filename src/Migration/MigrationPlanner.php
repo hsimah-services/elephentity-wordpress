@@ -137,8 +137,15 @@ final readonly class MigrationPlanner
         }
 
         foreach ($desired->indexes as $name => $index) {
-            if (!isset($current->indexes[$name])) {
+            $existing = $current->indexes[$name] ?? null;
+            if (null === $existing) {
                 $changes[] = $this->ddl->addIndex($desired->name, $index);
+            } elseif ($existing->columns !== $index->columns || $existing->unique !== $index->unique) {
+                $changes[] = new Refusal(
+                    'index.changed',
+                    sprintf('Index "%s" has different columns or uniqueness. Rebuild it in an explicit migration.', $name),
+                    $desired->name,
+                );
             }
         }
 

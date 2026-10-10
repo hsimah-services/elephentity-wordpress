@@ -140,6 +140,16 @@ final readonly class WordPressAdaptor implements StorageAdaptor
 
     public function query(Criteria $criteria): Page
     {
+        if (null !== $criteria->limit) {
+            if ($criteria->limit < 0) {
+                throw new RuntimeException('Page size must be non-negative.');
+            }
+            if (0 === $criteria->limit) {
+                return new Page([]);
+            }
+            $criteria = $criteria->take(min($criteria->limit, QueryCompiler::MAX_LIMIT), $criteria->after);
+        }
+
         $taxonomy = $this->taxonomies[$criteria->entity] ?? null;
 
         if (null !== $taxonomy) {
@@ -483,10 +493,13 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         }
 
         if ($placement->keyIsLocal()) {
-            $this->database->execute(
-                sprintf('UPDATE `%s` SET `%s` = NULL WHERE `id` = %%d', $placement->table, $placement->localColumn),
-                [$from],
-            );
+            $sql = sprintf('UPDATE `%s` SET `%s` = NULL WHERE `id` = %%d', $placement->table, $placement->localColumn);
+            $bindings = [$from];
+            if (null !== $to) {
+                $sql .= sprintf(' AND `%s` = %%d', $placement->localColumn);
+                $bindings[] = $to;
+            }
+            $this->database->execute($sql, $bindings);
 
             return;
         }
@@ -562,8 +575,10 @@ final readonly class WordPressAdaptor implements StorageAdaptor
                 throw new RuntimeException('wp_post_id is managed by the WordPress integration.');
             }
 
-            $assignments[] = sprintf('`%s` = %%s', $this->fields->column($operation->entity(), $field));
-            $bindings[] = $value;
+            $assignments[] = sprintf('`%s` = %s', $this->fields->column($operation->entity(), $field), null === $value ? 'NULL' : '%s');
+            if (null !== $value) {
+                $bindings[] = $value;
+            }
         }
 
         $target = $operation->target();
