@@ -124,6 +124,37 @@ final class WordPressAdaptorTest extends TestCase
         self::assertSame([], $database->statements);
     }
 
+    public function testClearingNullableFieldsNeverBindsNullToAStringPlaceholder(): void
+    {
+        $database = new FakeDatabase();
+        $this->adaptor($database)->write(new WriteBatch(
+            new Update('Post', EntityId::of(7), ['title' => null, 'createdAt' => null, 'counter' => null, 'externalId' => null]),
+            new Update('Post', EntityId::of(8), ['title' => null, 'createdAt' => '2026-10-10 00:00:00']),
+        ));
+
+        self::assertSame('UPDATE `wp_phe_post` SET `title` = NULL, `created_at` = NULL, `counter` = NULL, `external_id` = NULL WHERE `id` = %d', $database->statements[0]['sql']);
+        self::assertSame([7], $database->statements[0]['bindings']);
+        self::assertSame('UPDATE `wp_phe_post` SET `title` = NULL, `created_at` = %s WHERE `id` = %d', $database->statements[1]['sql']);
+        self::assertSame(['2026-10-10 00:00:00', 8], $database->statements[1]['bindings']);
+    }
+
+    public function testTargetedUnlinkRequiresTheCurrentTargetButClearAllDoesNot(): void
+    {
+        $database = new FakeDatabase();
+        $adaptor = new WordPressAdaptor($database, ['Post' => new TableSchema('wp_phe_post', [])], new FieldMap([]), placements: [
+            'Post.owner' => new EdgePlacement('Post', 'owner', 'Author', RelationKind::ManyToOne, 'wp_phe_post', 'owner_id'),
+        ]);
+        $adaptor->write(new WriteBatch(
+            new Unlink('Post', 'owner', EntityId::of(1), EntityId::of(3)),
+            new Unlink('Post', 'owner', EntityId::of(1)),
+        ));
+
+        self::assertSame('UPDATE `wp_phe_post` SET `owner_id` = NULL WHERE `id` = %d AND `owner_id` = %d', $database->statements[0]['sql']);
+        self::assertSame([1, 3], $database->statements[0]['bindings']);
+        self::assertSame('UPDATE `wp_phe_post` SET `owner_id` = NULL WHERE `id` = %d', $database->statements[1]['sql']);
+        self::assertSame([1], $database->statements[1]['bindings']);
+    }
+
     public function testATransactionCommitsOnSuccess(): void
     {
         $database = new FakeDatabase();
@@ -181,6 +212,31 @@ final class WordPressAdaptorTest extends TestCase
         self::assertCount(1, $page->items);
         self::assertFalse($page->hasMore());
         self::assertNull($page->next);
+    }
+
+    public function testAnOversizedPageDropsTheProbeAtTheEffectiveLimit(): void
+    {
+        $database = new FakeDatabase();
+        $database->rows = array_map(static fn (int $id): array => ['id' => $id], range(1, 1001));
+        $page = $this->adaptor($database)->query(Criteria::for('Post')->take(2000));
+        self::assertCount(1000, $page->items);
+        self::assertTrue($page->hasMore());
+        self::assertSame(1000, Offset::fromCursor($page->next)->value);
+    }
+
+    public function testAZeroPageDoesNotQueryOrReturnANonAdvancingCursor(): void
+    {
+        $database = new FakeDatabase();
+        $page = $this->adaptor($database)->query(Criteria::for('Post')->take(0));
+        self::assertSame([], $page->items);
+        self::assertFalse($page->hasMore());
+        self::assertSame([], $database->statements);
+    }
+
+    public function testANegativePageIsRejected(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->adaptor(new FakeDatabase())->query(Criteria::for('Post')->take(-1));
     }
 
     public function testFieldNamesBecomeColumnNamesOnTheWayDown(): void
@@ -505,7 +561,7 @@ final class WordPressAdaptorTest extends TestCase
             // FieldMap WordPress::adaptor() builds from the manifest, but a fixed map
             // of exactly the fields this file's tests touch is enough to prove the
             // adaptor translates them, and does not require compiling a spec here.
-            new FieldMap(['Post' => ['title' => 'title', 'createdAt' => 'created_at']]),
+            new FieldMap(['Post' => ['title' => 'title', 'createdAt' => 'created_at', 'counter' => 'counter', 'externalId' => 'external_id']]),
         );
     }
 }

@@ -23,7 +23,7 @@ use RuntimeException;
  */
 final readonly class QueryCompiler
 {
-    private const MAX_LIMIT = 1000;
+    public const MAX_LIMIT = 1000;
 
     /**
      * @param array<string, EdgePlacement>     $placements         Keyed by "Entity.edge".

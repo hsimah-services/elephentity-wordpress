@@ -142,6 +142,17 @@ final class MigrationPlannerTest extends TestCase
         self::assertContains('table.unexpected', $codes);
     }
 
+    public function testChangedIndexDefinitionsAreRefused(): void
+    {
+        $current = $this->posts()->withIndex(new Index('lookup', ['title', 'id']));
+        foreach ([new Index('lookup', ['title', 'id'], unique: true), new Index('lookup', ['id', 'title'])] as $index) {
+            $plan = $this->plan(['posts' => $this->posts()->withIndex($index)], ['posts' => $current]);
+            self::assertFalse($plan->isSafe());
+            self::assertSame('index.changed', $plan->refusals[0]->code);
+            self::assertSame([], $plan->statements);
+        }
+    }
+
     /**
      * @param array<string, TableSchema> $desired
      * @param array<string, TableSchema> $current
