@@ -17,7 +17,6 @@ use Eleph\WordPress\Sql\CompiledQuery;
 use Eleph\WordPress\Sql\EdgePlacement;
 use Eleph\WordPress\Sql\QueryCompiler;
 use Eleph\WordPress\Sql\TableSchema;
-use Eleph\WordPress\Taxonomy\TaxonomyPlacement;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -239,50 +238,6 @@ final class QueryCompilerTest extends TestCase
         self::assertStringContainsString('WHERE `l1`.`tag_id` IN (%d)', $backward->sql);
     }
 
-    public function testATaxonomyEdgeReadBackwardsJoinsWordPressTermTables(): void
-    {
-        // Post.akas is a many-to-many edge to a taxonomy-backed Aka — no EdgePlacement
-        // exists for it, so reading it backwards ("which posts carry this term") has to
-        // reach wp_term_relationships / wp_term_taxonomy directly.
-        $compiled = $this->compileTaxonomyFor(
-            $this->table(),
-            Criteria::for('Post')->linkedTo(EdgeFilter::back('Post', 'akas', EntityId::of(5))),
-        );
-
-        self::assertSame(
-            'SELECT `wp_phe_post`.* FROM `wp_phe_post`'
-                . ' INNER JOIN `wp_term_relationships` `tr1` ON `tr1`.`object_id` = `wp_phe_post`.`id`'
-                . ' INNER JOIN `wp_term_taxonomy` `tt1` ON `tt1`.`term_taxonomy_id` = `tr1`.`term_taxonomy_id`'
-                . ' WHERE `tt1`.`taxonomy` = %s AND `tt1`.`term_id` IN (%d)',
-            $compiled->sql,
-        );
-        self::assertSame(['aka', '5'], $compiled->bindings);
-    }
-
-    public function testATaxonomyEdgeReadForwardsIsRefused(): void
-    {
-        // Reading it forwards means querying the Aka entity itself, which
-        // WordPressAdaptor resolves before QueryCompiler ever sees the criteria.
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('read it forwards by querying Aka');
-
-        $this->compileTaxonomyFor(
-            $this->table(),
-            Criteria::for('Post')->linkedTo(EdgeFilter::along('Post', 'akas', EntityId::of(5))),
-        );
-    }
-
-    public function testATaxonomyEdgeBatchesAcrossSeveralParents(): void
-    {
-        $compiled = $this->compileTaxonomyFor(
-            $this->table(),
-            Criteria::for('Post')->linkedTo(EdgeFilter::back('Post', 'akas', EntityId::of(1), EntityId::of(2))),
-        );
-
-        self::assertStringContainsString('`tt1`.`term_id` AS `__parent`', $compiled->sql);
-        self::assertSame(['aka', '1', '2'], $compiled->bindings);
-    }
-
     /**
      * @return iterable<string, array{string, bool}>
      */
@@ -329,20 +284,15 @@ final class QueryCompilerTest extends TestCase
             $criteria = $criteria->linkedTo(EdgeFilter::back('Post', 'akas', EntityId::of(67)));
             $alias = 'multiple' === $edge ? 2 : 1;
             $joins .= sprintf(
-                ' INNER JOIN `wp_term_relationships` `tr%1$d` ON `tr%1$d`.`object_id` = `wp_phe_post`.`id`'
-                    . ' INNER JOIN `wp_term_taxonomy` `tt%1$d` ON `tt%1$d`.`term_taxonomy_id` = `tr%1$d`.`term_taxonomy_id`',
+                ' INNER JOIN `wp_phe_post_akas` `l%1$d` ON `l%1$d`.`post_id` = `wp_phe_post`.`id`',
                 $alias,
             );
-            $clauses[] = sprintf('`tt%1$d`.`taxonomy` = %%s AND `tt%1$d`.`term_id` IN (%%d)', $alias);
-            $bindings[] = 'aka';
+            $clauses[] = sprintf('`l%1$d`.`aka_id` IN (%%d)', $alias);
             $bindings[] = '67';
         }
 
         $compiler = new QueryCompiler(
-            placements: $this->placements(),
-            taxonomyPlacements: ['Post.akas' => new TaxonomyPlacement('Post', 'akas', 'Aka', 'aka')],
-            termRelationshipsTable: 'wp_term_relationships',
-            termTaxonomyTable: 'wp_term_taxonomy',
+            placements: [...$this->placements(), 'Post.akas' => new EdgePlacement('Post', 'akas', 'Aka', RelationKind::ManyToMany, 'wp_phe_post_akas', 'post_id', 'aka_id')],
         );
         $suffix = sprintf(' FROM `%s`', $table->name) . $joins . ' WHERE ' . implode(' AND ', $clauses);
         $select = $compiler->select($table, $criteria);
@@ -352,15 +302,6 @@ final class QueryCompilerTest extends TestCase
         self::assertSame('SELECT COUNT(*)' . $suffix, $count->sql);
         self::assertSame($bindings, $select->bindings);
         self::assertSame($bindings, $count->bindings);
-    }
-
-    private function compileTaxonomyFor(TableSchema $table, Criteria $criteria): CompiledQuery
-    {
-        return (new QueryCompiler(
-            taxonomyPlacements: ['Post.akas' => new TaxonomyPlacement('Post', 'akas', 'Aka', 'aka')],
-            termRelationshipsTable: 'wp_term_relationships',
-            termTaxonomyTable: 'wp_term_taxonomy',
-        ))->select($table, $criteria);
     }
 
     private function compileFor(TableSchema $table, Criteria $criteria): CompiledQuery

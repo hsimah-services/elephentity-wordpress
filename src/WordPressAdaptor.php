@@ -42,10 +42,8 @@ use Throwable;
  * Thin by design: the interesting decisions — how the spec becomes a schema, how a
  * Criteria becomes SQL, how one becomes a term or an account instead — live in pure
  * classes that can be tested without a database. What remains here is dispatch and the
- * transaction boundary. Dispatch is by entity name for an entity's own rows, and by
- * "Entity.edge" for an edge that turned out to be a term relationship rather than a
- * column — an edge pointing at an account-backed entity needs no such dispatch, since
- * it is stored as an ordinary column or join table like any other.
+ * transaction boundary. Entity rows dispatch to SQL, native terms or accounts;
+ * domain edges always use their own columns or join tables.
  */
 final readonly class WordPressAdaptor implements StorageAdaptor
 {
@@ -71,6 +69,9 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         private array $posts = [],
         private PostStorage $post = new PostStorage(),
     ) {
+        if ([] !== $taxonomyPlacements) {
+            throw new RuntimeException('Regenerate the WordPress manifest: taxonomy edges require isolated domain storage.');
+        }
     }
 
     public function capabilities(): Capabilities
@@ -153,7 +154,7 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         $taxonomy = $this->taxonomies[$criteria->entity] ?? null;
 
         if (null !== $taxonomy) {
-            return $this->taxonomy->query($criteria->entity, $taxonomy, $criteria);
+            return $this->taxonomyQuery($criteria->entity, $taxonomy, $criteria);
         }
 
         $account = $this->accounts[$criteria->entity] ?? null;
@@ -193,7 +194,9 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         $taxonomy = $this->taxonomies[$criteria->entity] ?? null;
 
         if (null !== $taxonomy) {
-            return $this->taxonomy->count($taxonomy, $criteria);
+            return [] === $criteria->links
+                ? $this->taxonomy->count($taxonomy, $criteria)
+                : count($this->taxonomyQuery($criteria->entity, $taxonomy, $criteria->unbounded())->items);
         }
 
         $account = $this->accounts[$criteria->entity] ?? null;
@@ -205,6 +208,68 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         $compiled = $this->compiler->count($this->table($criteria->entity), $criteria);
 
         return (int) $this->database->scalar($compiled->sql, $compiled->bindings);
+    }
+
+    /**
+     * @return Page<Record>
+     */
+    private function taxonomyQuery(string $entity, string $taxonomy, Criteria $criteria): Page
+    {
+        if ([] === $criteria->links) {
+            return $this->taxonomy->query($entity, $taxonomy, $criteria);
+        }
+        if ([] !== $criteria->filters || [] !== $criteria->order || 1 !== count($criteria->links)) {
+            throw new RuntimeException('A linked taxonomy query supports one edge and no field filters or ordering.');
+        }
+        $link = $criteria->links[0];
+        $placement = $this->placement($link->entity, $link->edge);
+        if ($link->reversed || $placement->target !== $entity || (!$placement->usesJoinTable() && !$placement->keyIsLocal())) {
+            throw new RuntimeException('Query a taxonomy edge forwards from its declaring entity.');
+        }
+        $parent = $placement->usesJoinTable() ? $placement->localColumn : 'id';
+        $target = $placement->usesJoinTable() ? (string) $placement->targetColumn : $placement->localColumn;
+        $ids = array_map($this->rawId(...), $link->from);
+        if ([] === $ids) {
+            return new Page([]);
+        }
+        $rows = $this->database->select(
+            sprintf(
+                'SELECT `%s` AS `parent`, `%s` AS `target` FROM `%s` WHERE `%s` IN (%s) ORDER BY `%s`, `%s`',
+                $parent,
+                $target,
+                $placement->table,
+                $parent,
+                implode(', ', array_fill(0, count($ids), '%d')),
+                $parent,
+                $target,
+            ),
+            $ids,
+        );
+        $targets = array_values(array_unique(array_column($rows, 'target'), SORT_REGULAR));
+        $records = $this->taxonomy->getMany($entity, $taxonomy, array_map(
+            static fn (int|string $id): EntityId => EntityId::of($id),
+            array_values(array_filter($targets, static fn (mixed $id): bool => is_int($id) || is_string($id))),
+        ));
+        $byId = [];
+        foreach ($records as $record) {
+            $byId[(string) $record->id] = $record;
+        }
+        $items = [];
+        foreach ($rows as $row) {
+            $record = $byId[(string) ($row['target'] ?? '')] ?? null;
+            if (null !== $record) {
+                $items[] = $link->needsParentColumn()
+                    ? new Record($entity, $record->id, [...$record->values, EdgeFilter::PARENT_COLUMN => $row['parent']])
+                    : $record;
+            }
+        }
+        $offset = Offset::fromCursor($criteria->after)->value;
+        $hasMore = null !== $criteria->limit && count($items) > $offset + $criteria->limit;
+
+        return new Page(
+            array_slice($items, $offset, $criteria->limit),
+            $hasMore ? (new Offset($offset + $criteria->limit))->toCursor() : null,
+        );
     }
 
     /**
@@ -347,18 +412,6 @@ final readonly class WordPressAdaptor implements StorageAdaptor
                 continue;
             }
 
-            if ($operation instanceof Link && null !== ($placement = $this->taxonomyPlacements[$this->edgeKey($operation)] ?? null)) {
-                $this->taxonomy->link($placement->taxonomy, $operation);
-
-                continue;
-            }
-
-            if ($operation instanceof Unlink && null !== ($placement = $this->taxonomyPlacements[$this->edgeKey($operation)] ?? null)) {
-                $this->taxonomy->unlink($placement->taxonomy, $operation);
-
-                continue;
-            }
-
             $account = $this->accounts[$operation->entity()] ?? null;
 
             if (null !== $account && $operation instanceof Insert) {
@@ -375,6 +428,12 @@ final readonly class WordPressAdaptor implements StorageAdaptor
                 $this->account->delete();
             }
 
+            if ($operation instanceof Link || $operation instanceof Unlink) {
+                $operation instanceof Link ? $this->link($operation) : $this->unlink($operation);
+
+                continue;
+            }
+
             $table = $this->table($operation->entity());
 
             match (true) {
@@ -384,8 +443,6 @@ final readonly class WordPressAdaptor implements StorageAdaptor
                 ),
                 $operation instanceof Update => $this->update($table, $operation),
                 $operation instanceof Delete => $this->delete($table, $operation),
-                $operation instanceof Link => $this->link($operation),
-                $operation instanceof Unlink => $this->unlink($operation),
                 default => throw new RuntimeException(sprintf(
                     'Unsupported write operation %s.',
                     $operation::class,
@@ -394,14 +451,6 @@ final readonly class WordPressAdaptor implements StorageAdaptor
         }
 
         return $result;
-    }
-
-    /**
-     * @param Link|Unlink $operation
-     */
-    private function edgeKey(Link|Unlink $operation): string
-    {
-        return $operation->entity() . '.' . $operation->edge;
     }
 
     public function transaction(callable $work): mixed

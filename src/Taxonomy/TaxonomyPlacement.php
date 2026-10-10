@@ -5,13 +5,7 @@ declare(strict_types=1);
 namespace Eleph\WordPress\Taxonomy;
 
 /**
- * Where one edge to a taxonomy-backed entity lives: not a column or a join table, but
- * a row in WordPress's own `wp_term_relationships`.
- *
- * A mirror of `EdgePlacement` for the one relation SQL placement never sees. Derived
- * once, at build time, so the schema builder (which skips it entirely — there is no
- * table to alter) and the adaptor (which reads and writes it) cannot disagree about
- * which edges this applies to.
+ * Legacy native-object placement, retained so stale manifests fail with a regeneration message.
  */
 final readonly class TaxonomyPlacement
 {

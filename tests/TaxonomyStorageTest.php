@@ -7,12 +7,9 @@ namespace Eleph\WordPress\Tests;
 use Eleph\Runtime\Identity\EntityId;
 use Eleph\Runtime\Identity\PendingId;
 use Eleph\Runtime\Storage\Criteria;
-use Eleph\Runtime\Storage\EdgeFilter;
 use Eleph\Runtime\Storage\Filter;
 use Eleph\Runtime\Storage\Write\Delete;
 use Eleph\Runtime\Storage\Write\Insert;
-use Eleph\Runtime\Storage\Write\Link;
-use Eleph\Runtime\Storage\Write\Unlink;
 use Eleph\Runtime\Storage\Write\Update;
 use Eleph\WordPress\Taxonomy\TaxonomyStorage;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -102,41 +99,6 @@ final class TaxonomyStorageTest extends TestCase
         self::assertNull($terms->name(self::TAXONOMY, $id));
     }
 
-    public function testLinkAttachesATermWithoutDisturbingOthers(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $existing = $terms->insert(self::TAXONOMY, 'Existing');
-        $new = $terms->insert(self::TAXONOMY, 'New');
-        $terms->setTerms(self::TAXONOMY, 5, [$existing], append: false);
-
-        $storage->link(self::TAXONOMY, new Link('Tutorial', 'akas', EntityId::of(5), EntityId::of($new)));
-
-        self::assertSame([$existing, $new], $terms->relationships[self::TAXONOMY][5]);
-    }
-
-    public function testUnlinkWithATargetRemovesOnlyThatTerm(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $a = $terms->insert(self::TAXONOMY, 'A');
-        $b = $terms->insert(self::TAXONOMY, 'B');
-        $terms->setTerms(self::TAXONOMY, 5, [$a, $b], append: false);
-
-        $storage->unlink(self::TAXONOMY, new Unlink('Tutorial', 'akas', EntityId::of(5), EntityId::of($a)));
-
-        self::assertSame([$b], $terms->relationships[self::TAXONOMY][5]);
-    }
-
-    public function testUnlinkWithNoTargetClearsEverything(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $a = $terms->insert(self::TAXONOMY, 'A');
-        $terms->setTerms(self::TAXONOMY, 5, [$a], append: false);
-
-        $storage->unlink(self::TAXONOMY, new Unlink('Tutorial', 'akas', EntityId::of(5)));
-
-        self::assertArrayNotHasKey(5, $terms->relationships[self::TAXONOMY]);
-    }
-
     public function testQueryWithNoLinksListsEveryTermAlphabeticallyByInsertion(): void
     {
         [$terms, $storage] = $this->storage();
@@ -177,60 +139,6 @@ final class TaxonomyStorageTest extends TestCase
         $storage->query('Aka', self::TAXONOMY, Criteria::for('Aka')->where(Filter::equals('name', 'x')));
     }
 
-    public function testQueryLinkedToReturnsTheAttachedTerms(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $sparky = $terms->insert(self::TAXONOMY, 'Sparky');
-        $terms->setTerms(self::TAXONOMY, 5, [$sparky], append: false);
-
-        $page = $storage->query(
-            'Aka',
-            self::TAXONOMY,
-            Criteria::for('Aka')->linkedTo(EdgeFilter::along('Tutorial', 'akas', EntityId::of(5))),
-        );
-
-        self::assertCount(1, $page->items);
-        self::assertSame('Sparky', $page->items[0]->value('name'));
-        self::assertNull($page->items[0]->value(EdgeFilter::PARENT_COLUMN));
-    }
-
-    public function testQueryLinkedToBatchesAcrossParentsAndProjectsWhichOneEachCameFrom(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $sparky = $terms->insert(self::TAXONOMY, 'Sparky');
-        $rex = $terms->insert(self::TAXONOMY, 'Rex');
-        $terms->setTerms(self::TAXONOMY, 5, [$sparky], append: false);
-        $terms->setTerms(self::TAXONOMY, 6, [$rex], append: false);
-
-        $page = $storage->query(
-            'Aka',
-            self::TAXONOMY,
-            Criteria::for('Aka')->linkedTo(EdgeFilter::along('Tutorial', 'akas', EntityId::of(5), EntityId::of(6))),
-        );
-
-        $byParent = [];
-
-        foreach ($page->items as $record) {
-            $byParent[(int) $record->value(EdgeFilter::PARENT_COLUMN)] = (string) $record->value('name');
-        }
-
-        self::assertSame(['Sparky' => 5, 'Rex' => 6], array_flip($byParent));
-    }
-
-    public function testQueryLinkedToReadBackwardsIsRefused(): void
-    {
-        [, $storage] = $this->storage();
-
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('cannot be read backwards');
-
-        $storage->query(
-            'Aka',
-            self::TAXONOMY,
-            Criteria::for('Aka')->linkedTo(EdgeFilter::back('Tutorial', 'akas', EntityId::of(5))),
-        );
-    }
-
     public function testCountWithNoLinksCountsEveryTerm(): void
     {
         [$terms, $storage] = $this->storage();
@@ -238,20 +146,6 @@ final class TaxonomyStorageTest extends TestCase
         $terms->insert(self::TAXONOMY, 'B');
 
         self::assertSame(2, $storage->count(self::TAXONOMY, Criteria::for('Aka')));
-    }
-
-    public function testCountLinkedToCountsAttachedTerms(): void
-    {
-        [$terms, $storage] = $this->storage();
-        $sparky = $terms->insert(self::TAXONOMY, 'Sparky');
-        $terms->setTerms(self::TAXONOMY, 5, [$sparky], append: false);
-
-        $count = $storage->count(
-            self::TAXONOMY,
-            Criteria::for('Aka')->linkedTo(EdgeFilter::along('Tutorial', 'akas', EntityId::of(5))),
-        );
-
-        self::assertSame(1, $count);
     }
 
     /**

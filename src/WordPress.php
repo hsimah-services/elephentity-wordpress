@@ -31,11 +31,6 @@ final readonly class WordPress
             new QueryCompiler(
                 placements: $prefixed->placements,
                 taxonomyPlacements: $prefixed->taxonomyPlacements,
-                // WordPress's own tables, not this schema's: wp_term_relationships and
-                // wp_term_taxonomy carry only $wpdb's own prefix, never the additional
-                // layer withPrefix() just applied to this schema's own tables.
-                termRelationshipsTable: $database->prefix() . 'term_relationships',
-                termTaxonomyTable: $database->prefix() . 'term_taxonomy',
             ),
             $prefixed->taxonomies,
             $prefixed->taxonomyPlacements,

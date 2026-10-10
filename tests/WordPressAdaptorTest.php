@@ -22,7 +22,6 @@ use Eleph\WordPress\Sql\Column;
 use Eleph\WordPress\Sql\EdgePlacement;
 use Eleph\WordPress\Sql\FieldMap;
 use Eleph\WordPress\Sql\TableSchema;
-use Eleph\WordPress\Taxonomy\TaxonomyPlacement;
 use Eleph\WordPress\Taxonomy\TaxonomyStorage;
 use Eleph\WordPress\WordPressAdaptor;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -310,38 +309,8 @@ final class WordPressAdaptorTest extends TestCase
         self::assertSame([], $database->inserts);
     }
 
-    public function testLinkOnATaxonomyPlacedEdgeSetsATermRelationshipRatherThanSql(): void
+    public function testOrdinaryEntityUpdatesStillUseSql(): void
     {
-        $database = new FakeDatabase();
-        $terms = new FakeTerms();
-        $akaId = $terms->insert('aka', 'Sparky');
-
-        $this->taxonomyAdaptor($database, $terms)->write(new WriteBatch(
-            new Link('Tutorial', 'akas', EntityId::of(5), EntityId::of($akaId)),
-        ));
-
-        self::assertSame([$akaId], $terms->relationships['aka'][5]);
-        self::assertSame([], $database->statements);
-    }
-
-    public function testUnlinkOnATaxonomyPlacedEdgeRemovesATermRelationship(): void
-    {
-        $database = new FakeDatabase();
-        $terms = new FakeTerms();
-        $akaId = $terms->insert('aka', 'Sparky');
-        $terms->setTerms('aka', 5, [$akaId], append: false);
-
-        $this->taxonomyAdaptor($database, $terms)->write(new WriteBatch(
-            new Unlink('Tutorial', 'akas', EntityId::of(5), EntityId::of($akaId)),
-        ));
-
-        self::assertSame([], $terms->relationships['aka'][5]);
-    }
-
-    public function testAnOrdinaryEdgeOnTheSameEntityIsUnaffectedByTaxonomyPlacements(): void
-    {
-        // Tutorial itself is not taxonomy-backed — only its "akas" edge is diverted.
-        // An unrelated write against Tutorial's own table must still reach SQL.
         $database = new FakeDatabase();
 
         $adaptor = new WordPressAdaptor(
@@ -351,7 +320,6 @@ final class WordPressAdaptorTest extends TestCase
                 'title' => new Column('title', 'VARCHAR(255)'),
             ])],
             new FieldMap([]),
-            taxonomyPlacements: ['Tutorial.akas' => new TaxonomyPlacement('Tutorial', 'akas', 'Aka', 'aka')],
         );
 
         $adaptor->write(new WriteBatch(new Update('Tutorial', EntityId::of(1), ['title' => 'New'])));
@@ -542,7 +510,6 @@ final class WordPressAdaptorTest extends TestCase
             [],
             new FieldMap([]),
             taxonomies: ['Aka' => 'aka'],
-            taxonomyPlacements: ['Tutorial.akas' => new TaxonomyPlacement('Tutorial', 'akas', 'Aka', 'aka')],
             taxonomy: new TaxonomyStorage($terms),
         );
     }

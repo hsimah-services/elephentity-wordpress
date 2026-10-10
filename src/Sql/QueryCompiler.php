@@ -33,10 +33,10 @@ final readonly class QueryCompiler
         private Naming $naming = new Naming(),
         private array $placements = [],
         private array $taxonomyPlacements = [],
-        /** WordPress's own tables, real names — its own prefix, never this schema's. */
-        private string $termRelationshipsTable = 'term_relationships',
-        private string $termTaxonomyTable = 'term_taxonomy',
     ) {
+        if ([] !== $taxonomyPlacements) {
+            throw new RuntimeException('Regenerate the WordPress manifest: taxonomy edges require isolated domain storage.');
+        }
     }
 
     public function select(TableSchema $table, Criteria $criteria): CompiledQuery
@@ -91,24 +91,6 @@ final readonly class QueryCompiler
         $alias = 0;
 
         foreach ($criteria->links as $link) {
-            $taxonomy = $this->taxonomyPlacements[$link->entity . '.' . $link->edge] ?? null;
-
-            if (null !== $taxonomy) {
-                $on = sprintf('tr%d', ++$alias);
-                $tt = sprintf('tt%d', $alias);
-                $result = $this->taxonomyJoin($table, $on, $tt, $taxonomy, $link);
-
-                $joins .= $result['join'];
-                $clauses[] = $result['clause'];
-                $projection .= $result['projection'];
-
-                foreach ($result['bindings'] as $binding) {
-                    $bindings[] = $binding;
-                }
-
-                continue;
-            }
-
             $placement = $this->placement($link);
             $ids = array_map(static fn ($id): string => (string) $id, $link->from);
             $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
@@ -185,60 +167,6 @@ final readonly class QueryCompiler
         }
 
         return $link->reversed ? $placement->keyIsLocal() : !$placement->keyIsLocal();
-    }
-
-    /**
-     * A "linked to" filter whose edge turned out to be a term relationship, not a
-     * column. Only reachable read backwards — reading it forwards means querying the
-     * taxonomy entity itself, which `WordPressAdaptor` resolves before this class ever
-     * sees the criteria; `TaxonomyStorage` is where that path lives instead.
-     *
-     * @return array{join: string, clause: string, projection: string, bindings: list<scalar|null>}
-     */
-    private function taxonomyJoin(
-        TableSchema $table,
-        string $relationshipsAlias,
-        string $taxonomyAlias,
-        TaxonomyPlacement $placement,
-        EdgeFilter $link,
-    ): array {
-        if (!$link->reversed) {
-            throw new RuntimeException(sprintf(
-                '%s.%s is a taxonomy edge; read it forwards by querying %s, not %s.',
-                $placement->entity,
-                $placement->edge,
-                $placement->target,
-                $table->name,
-            ));
-        }
-
-        $ids = array_map(static fn ($id): string => (string) $id, $link->from);
-        $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
-
-        return [
-            'join' => sprintf(
-                ' INNER JOIN `%s` `%s` ON `%s`.`object_id` = `%s`.`id`'
-                    . ' INNER JOIN `%s` `%s` ON `%s`.`term_taxonomy_id` = `%s`.`term_taxonomy_id`',
-                $this->termRelationshipsTable,
-                $relationshipsAlias,
-                $relationshipsAlias,
-                $table->name,
-                $this->termTaxonomyTable,
-                $taxonomyAlias,
-                $taxonomyAlias,
-                $relationshipsAlias,
-            ),
-            'clause' => sprintf(
-                '`%s`.`taxonomy` = %%s AND `%s`.`term_id` IN (%s)',
-                $taxonomyAlias,
-                $taxonomyAlias,
-                $placeholders,
-            ),
-            'projection' => $link->needsParentColumn()
-                ? sprintf(', `%s`.`term_id` AS `%s`', $taxonomyAlias, EdgeFilter::PARENT_COLUMN)
-                : '',
-            'bindings' => [$placement->taxonomy, ...$ids],
-        ];
     }
 
     private function placement(EdgeFilter $link): EdgePlacement
