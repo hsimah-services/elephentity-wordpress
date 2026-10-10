@@ -50,7 +50,7 @@ interface Users
      *
      * @return list<int>
      */
-    public function list(?int $limit, int $offset): array;
+    public function list(?int $limit, int $offset, bool $descending = false): array;
 
     public function count(): int;
 }

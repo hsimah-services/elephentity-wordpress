@@ -7,6 +7,7 @@ namespace Eleph\WordPress\Tests;
 use Eleph\Runtime\Identity\EntityId;
 use Eleph\Runtime\Storage\Criteria;
 use Eleph\Runtime\Storage\Filter;
+use Eleph\Runtime\Storage\Order;
 use Eleph\Runtime\Storage\Write\Update;
 use Eleph\WordPress\Account\AccountFields;
 use Eleph\WordPress\Account\AccountStorage;
@@ -18,6 +19,18 @@ use RuntimeException;
 #[CoversClass(AccountStorage::class)]
 final class AccountStorageTest extends TestCase
 {
+    public function testPagesHonorExplicitIdOrder(): void
+    {
+        [$users, $storage, $fields, $map] = $this->storage();
+        $users->registered = [5 => '2026-01-01 00:00:00', 2 => '2026-01-01 00:00:00'];
+        $criteria = Criteria::for('User')->orderBy(Order::descending('id'));
+        $page = $storage->query('User', $fields, $map, $criteria->take(1));
+        self::assertSame(5, $page->items[0]->id->raw());
+        $next = $storage->query('User', $fields, $map, $criteria->take(1, $page->next));
+        self::assertSame(2, $next->items[0]->id->raw());
+        self::assertFalse($next->hasMore());
+    }
+
     public function testGetReturnsNullWhenWordPressHasNoSuchUser(): void
     {
         [, $storage, $fields, $map] = $this->storage();

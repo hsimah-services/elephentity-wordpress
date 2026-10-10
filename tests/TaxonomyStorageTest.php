@@ -8,6 +8,7 @@ use Eleph\Runtime\Identity\EntityId;
 use Eleph\Runtime\Identity\PendingId;
 use Eleph\Runtime\Storage\Criteria;
 use Eleph\Runtime\Storage\Filter;
+use Eleph\Runtime\Storage\Order;
 use Eleph\Runtime\Storage\Write\Delete;
 use Eleph\Runtime\Storage\Write\Insert;
 use Eleph\Runtime\Storage\Write\Update;
@@ -20,6 +21,19 @@ use RuntimeException;
 final class TaxonomyStorageTest extends TestCase
 {
     private const TAXONOMY = 'aka';
+
+    public function testPagesHonorExplicitIdOrder(): void
+    {
+        [$terms, $storage] = $this->storage();
+        $first = $terms->insert(self::TAXONOMY, 'Zulu');
+        $second = $terms->insert(self::TAXONOMY, 'Alpha');
+        $criteria = Criteria::for('Aka')->orderBy(Order::descending('id'));
+        $page = $storage->query('Aka', self::TAXONOMY, $criteria->take(1));
+        self::assertSame($second, $page->items[0]->id->raw());
+        $next = $storage->query('Aka', self::TAXONOMY, $criteria->take(1, $page->next));
+        self::assertSame($first, $next->items[0]->id->raw());
+        self::assertFalse($next->hasMore());
+    }
 
     public function testGetReturnsARecordForAnExistingTerm(): void
     {

@@ -29,7 +29,7 @@ final class QueryCompilerTest extends TestCase
     {
         $compiled = $this->compile(Criteria::for('Post'));
 
-        self::assertSame('SELECT `wp_phe_post`.* FROM `wp_phe_post`', $compiled->sql);
+        self::assertSame('SELECT `wp_phe_post`.* FROM `wp_phe_post` ORDER BY `wp_phe_post`.`id` ASC', $compiled->sql);
         self::assertSame([], $compiled->bindings);
     }
 
@@ -40,7 +40,7 @@ final class QueryCompilerTest extends TestCase
         );
 
         self::assertSame(
-            'SELECT `wp_phe_post`.* FROM `wp_phe_post` WHERE `wp_phe_post`.`title` = %s',
+            'SELECT `wp_phe_post`.* FROM `wp_phe_post` WHERE `wp_phe_post`.`title` = %s ORDER BY `wp_phe_post`.`id` ASC',
             $compiled->sql,
         );
         self::assertSame(["'; DROP TABLE --"], $compiled->bindings);
@@ -122,7 +122,7 @@ final class QueryCompilerTest extends TestCase
         self::assertSame(
             'SELECT `wp_phe_post`.* FROM `wp_phe_post`'
                 . ' WHERE `wp_phe_post`.`title` = %s AND `wp_phe_post`.`id` > %s'
-                . ' ORDER BY `wp_phe_post`.`created_at` DESC',
+                . ' ORDER BY `wp_phe_post`.`created_at` DESC, `wp_phe_post`.`id` ASC',
             $compiled->sql,
         );
         self::assertSame(['a', 5], $compiled->bindings);
@@ -181,7 +181,7 @@ final class QueryCompilerTest extends TestCase
         );
 
         self::assertSame(
-            'SELECT `wp_phe_comment`.* FROM `wp_phe_comment` WHERE `wp_phe_comment`.`post_id` IN (%d)',
+            'SELECT `wp_phe_comment`.* FROM `wp_phe_comment` WHERE `wp_phe_comment`.`post_id` IN (%d) ORDER BY `wp_phe_comment`.`id` ASC',
             $compiled->sql,
         );
     }
@@ -198,7 +198,7 @@ final class QueryCompilerTest extends TestCase
         self::assertSame(
             'SELECT `wp_phe_post`.* FROM `wp_phe_post`'
                 . ' INNER JOIN `wp_phe_comment` `l1` ON `l1`.`post_id` = `wp_phe_post`.`id`'
-                . ' WHERE `l1`.`id` IN (%d)',
+                . ' WHERE `l1`.`id` IN (%d) ORDER BY `wp_phe_post`.`id` ASC',
             $compiled->sql,
         );
         self::assertSame(['10'], $compiled->bindings);
@@ -214,7 +214,7 @@ final class QueryCompilerTest extends TestCase
         );
 
         self::assertSame(
-            'SELECT `wp_phe_comment`.* FROM `wp_phe_comment` WHERE `wp_phe_comment`.`post_id` IN (%d)',
+            'SELECT `wp_phe_comment`.* FROM `wp_phe_comment` WHERE `wp_phe_comment`.`post_id` IN (%d) ORDER BY `wp_phe_comment`.`id` ASC',
             $compiled->sql,
         );
     }
@@ -298,7 +298,7 @@ final class QueryCompilerTest extends TestCase
         $select = $compiler->select($table, $criteria);
         $count = $compiler->count($table, $criteria);
 
-        self::assertSame(sprintf('SELECT `%s`.*', $table->name) . $suffix, $select->sql);
+        self::assertSame(sprintf('SELECT `%s`.*', $table->name) . $suffix . sprintf(' ORDER BY `%s`.`id` ASC', $table->name), $select->sql);
         self::assertSame('SELECT COUNT(*)' . $suffix, $count->sql);
         self::assertSame($bindings, $select->bindings);
         self::assertSame($bindings, $count->bindings);

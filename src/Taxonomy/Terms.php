@@ -37,12 +37,12 @@ interface Terms
     public function names(string $taxonomy, array $termIds): array;
 
     /**
-     * Every term in the taxonomy, ordered by name, id-only — callers page and hydrate
+     * Every term in the taxonomy, ordered by id, id-only — callers page and hydrate
      * through `names()` the same as any other list.
      *
      * @return list<int>
      */
-    public function list(string $taxonomy, ?int $limit, int $offset): array;
+    public function list(string $taxonomy, ?int $limit, int $offset, bool $descending = false): array;
 
     public function count(string $taxonomy): int;
 

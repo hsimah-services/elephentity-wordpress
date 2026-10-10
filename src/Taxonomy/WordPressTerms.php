@@ -69,14 +69,14 @@ final readonly class WordPressTerms implements Terms
         return $names;
     }
 
-    public function list(string $taxonomy, ?int $limit, int $offset): array
+    public function list(string $taxonomy, ?int $limit, int $offset, bool $descending = false): array
     {
         $args = [
             'taxonomy' => $taxonomy,
             'hide_empty' => false,
             'fields' => 'ids',
-            'orderby' => 'name',
-            'order' => 'ASC',
+            'orderby' => 'term_id',
+            'order' => $descending ? 'DESC' : 'ASC',
             'offset' => $offset,
         ];
 
