@@ -2,7 +2,7 @@
     "name": "elephentity/wordpress",
     "description": "WordPress storage adaptor for Elephentity. The only package permitted to reference WP symbols.",
     "type": "library",
-    "license": "Apache-2.0",
+    "license": "MIT",
     "minimum-stability": "stable",
     "prefer-stable": true,
     "require": {
